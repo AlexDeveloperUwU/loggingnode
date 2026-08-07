@@ -1,0 +1,60 @@
+{
+  "name": "@alexdevuwu/logging",
+  "version": "0.1.0",
+  "description": "Opinionated structured logging for Node.js — wide events, Seq aggregation, pino under the hood.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./express": "./src/middleware/express.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "test:watch": "node --test --watch \"test/*.test.js\"",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "example:basic": "node examples/basic.js",
+    "example:express": "node examples/express.js",
+    "example:basic:seq": "bash -c 'SEQ_SERVER_URL=http://localhost:5341 node examples/basic.js'",
+    "example:wide-event:seq": "bash -c 'SEQ_SERVER_URL=http://localhost:5341 node examples/wide-event.js'",
+    "example:shutdown:seq": "bash -c 'SEQ_SERVER_URL=http://localhost:5341 timeout 5 node examples/shutdown.js; echo done'",
+    "example:express:seq": "bash -c 'SEQ_SERVER_URL=http://localhost:5341 node examples/express.js'",
+    "examples:seq": "npm run example:basic:seq && npm run example:wide-event:seq && npm run example:shutdown:seq && npm run example:express:seq",
+    "smoke": "npm run examples:seq && echo '--- Open http://localhost:5340 to see all events ---'"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "pino": "^10.0.0",
+    "pino-seq": "^4.0.0"
+  },
+  "peerDependencies": {
+    "pino-pretty": ">=10"
+  },
+  "peerDependenciesMeta": {
+    "pino-pretty": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "eslint": "^9.0.0",
+    "pino-pretty": "^13.0.0",
+    "prettier": "^3.0.0"
+  },
+  "license": "MIT",
+  "keywords": [
+    "logging",
+    "pino",
+    "seq",
+    "structured-logging",
+    "wide-events",
+    "observability"
+  ]
+}
