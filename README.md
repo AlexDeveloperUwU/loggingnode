@@ -222,7 +222,7 @@ await withContext(
 
 | Option                     | Type               | Default                                      | Description                                                                                        |
 | -------------------------- | ------------------ | -------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `service`                  | string             | auto-detected (see below)                    | Service name → `@service`; source of the `[APP]` message tag                                      |
+| `service`                  | string             | auto-detected (see below)                    | Service name → `@service`; source of the `[APP]` message tag                                       |
 | `level`                    | string             | `LOG_LEVEL` or `info` (prod) / `debug` (dev) | Minimum pino level: `trace`/`debug`/`info`/`warn`/`error`/`fatal`                                  |
 | `environment`              | string             | `NODE_ENV` or `'development'`                | → `@environment` base field                                                                        |
 | `version`                  | string             | auto-detected                                | Deployed version → `@version`                                                                      |
@@ -255,14 +255,14 @@ await withContext(
 
 Most context fills itself in — set options only when auto-detection isn't enough:
 
-| Field           | Resolution order                                                                    |
-| --------------- | ----------------------------------------------------------------------------------- |
-| `@service`      | option → `SERVICE_NAME` → nearest `package.json` `name` → `'unknown'` (tag `[UNK]`) |
-| `@version`      | option → `SERVICE_VERSION` → nearest `package.json` `version` → `'unknown'`         |
-| `@commit_hash`  | option → `COMMIT_SHA` → `CI_COMMIT_SHA` → `GITHUB_SHA` → `'unknown'`                |
-| `@region`       | option → `REGION` → `AWS_REGION` → `FLY_REGION` → `'unknown'`                       |
-| `@instance_id`  | option → `HOSTNAME` → `os.hostname()` → random UUID                                 |
-| `@environment`  | option → `NODE_ENV` → `'development'`                                               |
+| Field          | Resolution order                                                                    |
+| -------------- | ----------------------------------------------------------------------------------- |
+| `@service`     | option → `SERVICE_NAME` → nearest `package.json` `name` → `'unknown'` (tag `[UNK]`) |
+| `@version`     | option → `SERVICE_VERSION` → nearest `package.json` `version` → `'unknown'`         |
+| `@commit_hash` | option → `COMMIT_SHA` → `CI_COMMIT_SHA` → `GITHUB_SHA` → `'unknown'`                |
+| `@region`      | option → `REGION` → `AWS_REGION` → `FLY_REGION` → `'unknown'`                       |
+| `@instance_id` | option → `HOSTNAME` → `os.hostname()` → random UUID                                 |
+| `@environment` | option → `NODE_ENV` → `'development'`                                               |
 
 `@node_version` (`process.version`) is always included in the base fields as well.
 
@@ -273,10 +273,10 @@ Most context fills itself in — set options only when auto-detection isn't enou
 | `SERVICE_NAME`             | auto-detected from `package.json` | Service name (used when the `service` option is absent) |
 | `LOG_LEVEL`                | `info` (prod) / `debug` (dev)     | Minimum log level                                       |
 | `NODE_ENV`                 | `development`                     | Environment; drives pretty/level defaults               |
-| `SERVICE_VERSION`          | `unknown`                         | `@version` base field                                    |
-| `COMMIT_SHA`               | `unknown`                         | `@commit_hash` base field                                |
-| `REGION`                   | `unknown`                         | `@region` base field                                     |
-| `HOSTNAME`                 | random UUID                       | `@instance_id` base field                                |
+| `SERVICE_VERSION`          | `unknown`                         | `@version` base field                                   |
+| `COMMIT_SHA`               | `unknown`                         | `@commit_hash` base field                               |
+| `REGION`                   | `unknown`                         | `@region` base field                                    |
+| `HOSTNAME`                 | random UUID                       | `@instance_id` base field                               |
 | `SEQ_SERVER_URL`           | —                                 | Enables the Seq stream when set                         |
 | `SEQ_API_KEY`              | —                                 | Seq API key                                             |
 | `LOG_PRETTY`               | on unless production              | `1`/`true`/`0`/`false`                                  |
@@ -303,15 +303,15 @@ If you reach for `debug` to understand a request, add fields to the wide event i
 
 Consistent field names are what make cross-service queries possible:
 
-| Convention                | Examples                                                               |
-| ------------------------- | ---------------------------------------------------------------------- |
-| snake_case everywhere     | `@request_id`, `@status_code`, `@user_agent`                          |
-| Unit suffixes             | `@duration_ms`, `@latency_ms`, `total_cents`, `lifetime_value_cents`  |
-| Money in minor units      | `249900` not `2499.00`                                                 |
-| Nested objects per domain | `user: { id, subscription }`, `cart: { ... }`, `payment: { ... }`      |
-| Outcome enum              | `@outcome: 'success' \| 'error' \| 'timeout' \| 'client_error'`       |
-| Uniform error shape       | `@error: { type, message, code, stack }`                               |
-| ISO-8601 UTC timestamps   | `@timestamp` (`2026-08-03T19:00:00.000Z`, automatic)                   |
+| Convention                | Examples                                                             |
+| ------------------------- | -------------------------------------------------------------------- |
+| snake_case everywhere     | `@request_id`, `@status_code`, `@user_agent`                         |
+| Unit suffixes             | `@duration_ms`, `@latency_ms`, `total_cents`, `lifetime_value_cents` |
+| Money in minor units      | `249900` not `2499.00`                                               |
+| Nested objects per domain | `user: { id, subscription }`, `cart: { ... }`, `payment: { ... }`    |
+| Outcome enum              | `@outcome: 'success' \| 'error' \| 'timeout' \| 'client_error'`      |
+| Uniform error shape       | `@error: { type, message, code, stack }`                             |
+| ISO-8601 UTC timestamps   | `@timestamp` (`2026-08-03T19:00:00.000Z`, automatic)                 |
 
 High cardinality is a feature: `@request_id`, `user_id`, and order IDs belong in your events. Modern log stores index them cheaply, and they're what make logs actually debuggable.
 

@@ -82,7 +82,12 @@ export function startEvent(fields = {}) {
   const event = {
     ...store,
     ...fields,
-    "@request_id": fields["@request_id"] ?? fields.request_id ?? store["@request_id"] ?? store.request_id ?? randomUUID(),
+    "@request_id":
+      fields["@request_id"] ??
+      fields.request_id ??
+      store["@request_id"] ??
+      store.request_id ??
+      randomUUID(),
     "@timestamp": new Date().toISOString(),
     ...(store._startHr ? {} : { _startHr: process.hrtime.bigint() }),
   };
