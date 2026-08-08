@@ -56,4 +56,45 @@ describe("serializeError", () => {
     assert.equal(result.message, "insufficient funds");
     assert.equal(result.code, "PAYMENT_FAILED");
   });
+
+  it("serialises error cause chains recursively", () => {
+    const inner = new Error("db down");
+    inner.code = "ECONNREFUSED";
+    const outer = new Error("checkout failed", { cause: inner });
+    outer.code = "CHECKOUT_FAILED";
+
+    const result = serializeError(outer);
+    assert.equal(result.type, "Error");
+    assert.equal(result.message, "checkout failed");
+    assert.equal(result.code, "CHECKOUT_FAILED");
+    assert.deepEqual(result.cause, {
+      type: "Error",
+      message: "db down",
+      code: "ECONNREFUSED",
+      stack: result.cause.stack,
+    });
+    assert.ok(typeof result.cause.stack === "string");
+  });
+
+  it("omits the cause key when there is no cause", () => {
+    const result = serializeError(new Error("plain"));
+    assert.ok(!("cause" in result));
+  });
+
+  it("bounded cause serialisation survives cycles", () => {
+    const a = new Error("a");
+    const b = new Error("b", { cause: a });
+    a.cause = b; // cycle
+    const result = serializeError(a);
+    assert.equal(result.type, "Error");
+    assert.equal(result.cause.type, "Error");
+    // Depth is bounded, so it terminates.
+    let depth = 1;
+    let cur = result.cause;
+    while (cur?.cause) {
+      depth += 1;
+      cur = cur.cause;
+    }
+    assert.ok(depth <= 6);
+  });
 });

@@ -25,6 +25,7 @@ export {
   DEFAULT_REDACT_PATHS,
   defaultCensor,
   buildRedact,
+  createRedactor,
 } from "./redaction.js";
 
 export { serializeError } from "./serializers.js";

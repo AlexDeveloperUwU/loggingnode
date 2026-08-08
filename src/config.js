@@ -70,12 +70,12 @@ function buildSeqConfig(seqOpts = {}, env) {
   const apiKey = seqOpts.apiKey || env.SEQ_API_KEY;
   if (apiKey) config.apiKey = apiKey;
 
-  if (env.SEQ_MAX_BATCHING_TIME_MS)
-    config.maxBatchingTime = Number(env.SEQ_MAX_BATCHING_TIME_MS);
-  if (env.SEQ_EVENT_SIZE_LIMIT)
-    config.eventSizeLimit = Number(env.SEQ_EVENT_SIZE_LIMIT);
-  if (env.SEQ_BATCH_SIZE_LIMIT)
-    config.batchSizeLimit = Number(env.SEQ_BATCH_SIZE_LIMIT);
+  const maxBatchingTime = toFiniteNumber(env.SEQ_MAX_BATCHING_TIME_MS);
+  if (maxBatchingTime != null) config.maxBatchingTime = maxBatchingTime;
+  const eventSizeLimit = toFiniteNumber(env.SEQ_EVENT_SIZE_LIMIT);
+  if (eventSizeLimit != null) config.eventSizeLimit = eventSizeLimit;
+  const batchSizeLimit = toFiniteNumber(env.SEQ_BATCH_SIZE_LIMIT);
+  if (batchSizeLimit != null) config.batchSizeLimit = batchSizeLimit;
 
   if (seqOpts.maxBatchingTime != null)
     config.maxBatchingTime = Number(seqOpts.maxBatchingTime);
@@ -129,6 +129,19 @@ function parsePrettyEnv(raw) {
   if (raw === "1" || raw === "true") return true;
   if (raw === "0" || raw === "false") return false;
   return undefined;
+}
+
+/**
+ * Parse a numeric env var, returning `undefined` for garbage so unvalidatable
+ * values silently fall back to the underlying default instead of poisoning the
+ * seq-logging client with `NaN`.
+ *
+ * @param {string|undefined} raw
+ * @returns {number|undefined}
+ */
+function toFiniteNumber(raw) {
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /**

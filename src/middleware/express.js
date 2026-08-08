@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { withContext } from "../context.js";
+import { withContext, getContext } from "../context.js";
 
 /**
  * Create Express (or Connect‑compatible) middleware that produces **one wide event**
@@ -14,9 +14,6 @@ import { withContext } from "../context.js";
  * otherwise a fresh UUID is generated.
  *
  * @param {import('pino').Logger} logger - The pino logger instance.
- * @param {object} [opts]
- * @param {function} [opts.sample] - `(eventFields) => boolean` tail‑sampling hook.
- *   Error outcomes always bypass sampling.
  * @returns {function} Express middleware `(req, res, next) => void`.
  *
  * @example
@@ -33,9 +30,7 @@ import { withContext } from "../context.js";
  *   res.json({ ok: true });
  * });
  */
-export function expressMiddleware(logger, opts = {}) {
-  const sampleFn = opts.sample ?? null;
-
+export function expressMiddleware(logger) {
   return (req, res, next) => {
     const requestId = req.headers["x-request-id"] || randomUUID();
     res.setHeader("x-request-id", requestId);
@@ -55,10 +50,14 @@ export function expressMiddleware(logger, opts = {}) {
     );
 
     function emit(store, res) {
-      if (!store || !store._startHr) return;
+      // Use the live ALS store: a handler that called startEvent() replaced the
+      // withContext store, and a handler that called endEvent() marked it ended.
+      // Falling back to the closure store keeps plain enrichEvent() flows intact.
+      const current = getContext() ?? store;
+      if (!current || !current._startHr || current._ended) return;
 
       const durationMs = Math.round(
-        Number(process.hrtime.bigint() - store._startHr) / 1e6,
+        Number(process.hrtime.bigint() - current._startHr) / 1e6,
       );
       const statusCode = res.statusCode;
       const outcome =
@@ -69,14 +68,13 @@ export function expressMiddleware(logger, opts = {}) {
             : "success";
 
       const event = {
-        ...store,
+        ...current,
         "@status_code": statusCode,
         "@duration_ms": durationMs,
         "@outcome": outcome,
       };
       delete event._startHr;
-
-      if (outcome !== "error" && sampleFn && !sampleFn(event)) return;
+      delete event._ended;
 
       if (outcome === "error") {
         logger.error(event, "request failed");

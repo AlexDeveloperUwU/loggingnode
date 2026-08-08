@@ -40,13 +40,11 @@ Library scaffolding (package.json, src/, tests) is the **next** task, executed a
 │   ├── logger.js           # createLogger / initLogger / getLogger / flush / close
 │   ├── context.js          # AsyncLocalStorage + wide-event lifecycle
 │   ├── streams.js          # multistream assembly: pretty / JSON stdout / pino-seq
-│   ├── redaction.js        # DEFAULT_REDACT_PATHS + merge
-│   ├── serializers.js      # err/error serializers {type,message,code,stack}
-│   ├── sampling.js         # tail-sampling hook
+│   ├── redaction.js        # DEFAULT_REDACT_PATHS + the compiled deep-redaction walker
+│   ├── serializers.js      # err/error serializers {type,message,code,stack,cause?}
 │   └── middleware/express.js  # expressMiddleware(logger) — one wide event per request
 ├── test/                   # one .test.js per src module (node:test)
-├── examples/               # basic.js, wide-event.js, express.js, shutdown.js
-└── docker-compose.seq.yml  # optional local Seq
+└── examples/               # basic.js, wide-event.js, express.js, shutdown.js
 ```
 
 ### Public API
@@ -65,7 +63,7 @@ Library scaffolding (package.json, src/, tests) is the **next** task, executed a
 
 - **Log levels**: all pino levels exposed; docs steer to `info` (wide events) + `error` (failures); `debug`/`trace` for local dev.
 - **Child loggers**: standard `logger.child({ component })`.
-- **Contextual enrichment**: env context via pino `base` — `service`, `version`, `commit_hash`, `region`, `environment`, `instance_id`, `node_version` — **auto-detected** at startup: option > env var > `package.json` (name/version, walked up from cwd) > CI vars (`CI_COMMIT_SHA`, `GITHUB_SHA`, `AWS_REGION`, `FLY_REGION`) > `os.hostname()` > `'unknown'`/random UUID.
+- **Contextual enrichment**: env context via pino `base` — `service`, `version`, `environment`, `instance_id`, `node_version` — **auto-detected** at startup: option > env var > `package.json` (name/version, walked up from cwd) > `os.hostname()` > `'unknown'`/random UUID.
 - **Message tag**: every message prefixed `[APP] · ` via pino `hooks.logMethod` — first 3 letters of service name, uppercased, `*`-padded (`AP*`, `A**`), `UNK` fallback. Constant per service ⇒ Seq `@mt` grouping unaffected.
 - **Redaction**: pino `redact` with `DEFAULT_REDACT_PATHS` (password/passwd/secret/authorization/x-api-key/cookie/token/access_token/refresh_token/id_token/api_key/private_key/credit_card/card_number/cvv/ssn + `*.`-wildcard and `headers.*` variants). **Censor is a proportional-mask function**: value < 3 chars → `***`; else mask all but the **last 25%** with `*` (75% hidden). User paths union-merged; deliberate opt-out via `redactRemove`; `redactCensor` accepts a string or custom `(value, path) => string`.
 - **Full Seq passthrough**: the `seq` option object goes to `createStream` with only documented defaults applied — message templating, `additionalProperties` context dictionaries, `logOtherAs`, batching limits, and any other seq-logging option all work.
@@ -88,7 +86,7 @@ Rationale for multistream over `pino.transport()`: pino-seq has no worker target
 
 Precedence: **explicit option > env var > default**; `resolveConfig(options, env = process.env)` is pure and returns a frozen object (trivially testable).
 
-Env vars: `SERVICE_NAME`, `LOG_LEVEL` (default `info` prod / `debug` dev), `NODE_ENV`, `SERVICE_VERSION`, `COMMIT_SHA`, `REGION`, `HOSTNAME`, `SEQ_SERVER_URL` (absent ⇒ Seq disabled), `SEQ_API_KEY`, `LOG_PRETTY`, `LOG_REDACT_PATHS` (CSV, merged), `LOG_SAMPLE_RATE` (0–1), `SEQ_MAX_BATCHING_TIME_MS`, `SEQ_EVENT_SIZE_LIMIT`, `SEQ_BATCH_SIZE_LIMIT`.
+Env vars: `SERVICE_NAME`, `LOG_LEVEL` (default `info` prod / `debug` dev), `NODE_ENV`, `SERVICE_VERSION`, `HOSTNAME`, `SEQ_SERVER_URL` (absent ⇒ Seq disabled), `SEQ_API_KEY`, `LOG_PRETTY`, `LOG_REDACT_PATHS` (CSV, merged), `SEQ_MAX_BATCHING_TIME_MS`, `SEQ_EVENT_SIZE_LIMIT`, `SEQ_BATCH_SIZE_LIMIT`.
 
 Auto-detection resolution order (option > env > runtime > fallback):
 
@@ -96,20 +94,14 @@ Auto-detection resolution order (option > env > runtime > fallback):
 | ------------- | ----------------------------------------------------------------------------------- |
 | `service`     | option → `SERVICE_NAME` → nearest `package.json` `name` → `'unknown'` (tag `[UNK]`) |
 | `version`     | option → `SERVICE_VERSION` → nearest `package.json` `version` → `'unknown'`         |
-| `commit_hash` | option → `COMMIT_SHA` → `CI_COMMIT_SHA` → `GITHUB_SHA` → `'unknown'`                |
-| `region`      | option → `REGION` → `AWS_REGION` → `FLY_REGION` → `'unknown'`                       |
 | `instance_id` | option → `HOSTNAME` → `os.hostname()` → random UUID                                 |
 | `environment` | option → `NODE_ENV` → `'development'`                                               |
 
 Validation: no throw for missing service — auto-detect, fall back to `'unknown'` (tag `[UNK]`), warn once on stderr; one stderr warning if production + pretty/trace/debug. Never log inside `onError` (recursion) — stderr only.
 
-### Tail sampling
-
-`sample(eventFields) => boolean` hook applied in `endEvent`; **errors/slow/VIP always kept** (hard rule: error outcome bypasses sampling); healthy traffic sampled per `LOG_SAMPLE_RATE` guidance (1–5%).
-
 ### Testing strategy (node:test, zero deps)
 
-Seam: `createLogger({ destination })` accepts an injected in-memory `Writable` capturing parsed JSON lines — no test touches stdout/Seq/network. Suites: config precedence matrix, base fields/level labels/child/memoization/flush idempotency, ALS isolation across interleaved async tasks, exactly-one-emission per event, redaction (default paths, nesting, censor, opt-out), serializers (incl. non-Error wrap), sampling (errors bypass), multistream routing (seqLevel), Express middleware via stub req/res EventEmitter (no supertest). Command: `node --test test/`.
+Seam: `createLogger({ destination })` accepts an injected in-memory `Writable` capturing parsed JSON lines — no test touches stdout/Seq/network. Suites: config precedence matrix, base fields/level labels/child/memoization/flush idempotency, ALS isolation across interleaved async tasks, exactly-one-emission per event, redaction (default paths, any-depth nesting, censor, opt-out), serializers (incl. non-Error wrap + cause chains), multistream routing (seqLevel), Express middleware via stub req/res EventEmitter (no supertest). Command: `node --test test/`.
 
 ### Key risks (documented in README)
 
@@ -134,11 +126,10 @@ Replace boilerplate entirely. Sections:
 11. **Field conventions** — snake_case, `_ms`/`_cents` suffixes, `outcome` enum, `error {type,message,code}`.
 12. **Redaction** — default paths, adding paths, `redactRemove` escape hatch, censor string.
 13. **Seq setup** — `docker run -e ACCEPT_EULA=Y -p 5341:80 datalust/seq:latest`; `SEQ_SERVER_URL=http://localhost:5341`; pino→Seq level mapping table; `@mt`/`@x` explanation.
-14. **Tail sampling** — keep errors/slow/VIP, sample 1–5%; `sample` hook example.
-15. **Graceful shutdown** — SIGTERM snippet with `await close()` + `Promise.race` timeout; why `process.exit()` loses Seq batches.
-16. **Anti-patterns** — no `console.log`, no per-file loggers, no string interpolation, no scattered per-request lines, no uncorrelated logs.
-17. **Development** — `npm test`, `npm run test:watch`, examples, layout.
-18. **License** — MIT.
+14. **Graceful shutdown** — SIGTERM snippet with `await close()` + `Promise.race` timeout; why `process.exit()` loses Seq batches.
+15. **Anti-patterns** — no `console.log`, no per-file loggers, no string interpolation, no scattered per-request lines, no uncorrelated logs.
+16. **Development** — `npm test`, `npm run test:watch`, examples, layout.
+17. **License** — MIT.
 
 ## CLAUDE.md (Deliverable 3) — content plan
 
@@ -162,5 +153,5 @@ Replace boilerplate entirely. Sections:
 1. `README.md` renders correctly (markdown lint by inspection; all code blocks are valid ESM JavaScript — mentally trace `node --check`-equivalent for each snippet).
 2. Every env var / option mentioned in README matches the configuration table in this plan (single source of truth).
 3. CLAUDE.md commands match scripts the follow-up scaffold will define (`npm test` → `node --test test/`).
-4. Cross-check best-practices section against the wide-events rules (one event/request, finally emission, request_id, base context, tail sampling) — nothing missing, nothing contradicting pino-seq's verified behavior (stream-only, flush-on-exit, level map).
+4. Cross-check best-practices section against the wide-events rules (one event/request, finally emission, request_id, base context) — nothing missing, nothing contradicting pino-seq's verified behavior (stream-only, flush-on-exit, level map).
 5. Confirm no TypeScript syntax anywhere and no CJS (`require`/`module.exports`) in any snippet.

@@ -15,7 +15,7 @@ The philosophy: **log what happened to the request, not what your code is doing.
 - **AsyncLocalStorage context** — enrich the current request's event from anywhere in the call stack, no parameter threading
 - **Dual output** — pretty-printed console in development, single-line JSON to stdout in production, and batched Seq ingestion whenever `SEQ_SERVER_URL` is set
 - **Secure by default** — passwords, tokens, cookies, API keys, and card data are proportionally masked (75% hidden, last 25% shown) before they ever reach a log stream
-- **Self-describing services** — `@service`, `@version`, `@commit_hash`, `@region`, and `@instance_id` are auto-detected from `package.json`, CI variables, and the hostname; zero-config for the common case
+- **Self-describing services** — `@service`, `@version`, and `@instance_id` are auto-detected from `package.json` and the hostname; zero-config for the common case
 - **Uniform message format** — every message is prefixed `[APP] · ` with your app's three-letter tag, so the source service is visible at a glance in any console
 - **Environment-based configuration** — twelve-factor friendly; explicit options override env vars, env vars override defaults
 - **Full Seq support** — message templates (`@mt`), context dictionaries, batching controls; every `pino-seq`/`seq-logging` option passes through
@@ -64,7 +64,6 @@ Output (production):
   "time": "2026-08-03T19:00:00.000Z",
   "@service": "billing-api",
   "@version": "1.4.2",
-  "@commit_hash": "a1b2c3d",
   "@environment": "production",
   "@instance_id": "web-1",
   "order_id": "ord_123",
@@ -73,7 +72,7 @@ Output (production):
 }
 ```
 
-Every event automatically carries the environment context (`@service`, `@version`, `@commit_hash`, `@region`, `@environment`, `@instance_id`) captured once at startup — no per-call repetition.
+Every event automatically carries the environment context (`@service`, `@version`, `@environment`, `@instance_id`) captured once at startup — no per-call repetition.
 
 > **Field namespacing:** Library-injected fields use the `@` prefix (e.g. `@service`, `@request_id`, `@duration_ms`) to keep them visually distinct from your application's own fields. Following [Seq's convention](https://docs.datalust.co/docs/posting-raw-events), `@` marks them as system metadata. Your fields stay prefix-free — just use plain `snake_case`.
 
@@ -226,8 +225,6 @@ await withContext(
 | `level`                    | string             | `LOG_LEVEL` or `info` (prod) / `debug` (dev) | Minimum pino level: `trace`/`debug`/`info`/`warn`/`error`/`fatal`                                  |
 | `environment`              | string             | `NODE_ENV` or `'development'`                | → `@environment` base field                                                                        |
 | `version`                  | string             | auto-detected                                | Deployed version → `@version`                                                                      |
-| `commitHash`               | string             | auto-detected                                | Git commit → `@commit_hash`                                                                        |
-| `region`                   | string             | auto-detected                                | Deployment region → `@region`                                                                      |
 | `instanceId`               | string             | auto-detected                                | → `@instance_id`                                                                                   |
 | `pretty`                   | boolean            | `true` unless production                     | Pretty-print to stdout (requires `pino-pretty`)                                                    |
 | `seq`                      | object             | enabled iff `serverUrl` set                  | Seq stream config, see below                                                                       |
@@ -246,8 +243,6 @@ await withContext(
 | `redactCensor`             | string \| function | proportional mask (see Redaction)            | Replacement value, or `(value, path) => string` for full control                                   |
 | `base`                     | object             | —                                            | Extra pino `base` fields merged into every event                                                   |
 | `serializers`              | object             | —                                            | Extra pino serializers merged over the defaults                                                    |
-| `sample`                   | function           | —                                            | Tail-sampling hook `(eventFields) => boolean`; errors always bypass it                             |
-| `sampleRate`               | number             | `LOG_SAMPLE_RATE` or `1` (keep all)          | Healthy-traffic keep rate 0–1; ignored when `sample` is provided                                   |
 | `destination`              | Writable           | —                                            | Inject a custom destination (test seam); bypasses stream assembly                                  |
 | `stdoutAsync`              | boolean            | `true`                                       | Use `pino.destination({ sync: false })` for stdout in production                                   |
 
@@ -259,8 +254,6 @@ Most context fills itself in — set options only when auto-detection isn't enou
 | -------------- | ----------------------------------------------------------------------------------- |
 | `@service`     | option → `SERVICE_NAME` → nearest `package.json` `name` → `'unknown'` (tag `[UNK]`) |
 | `@version`     | option → `SERVICE_VERSION` → nearest `package.json` `version` → `'unknown'`         |
-| `@commit_hash` | option → `COMMIT_SHA` → `CI_COMMIT_SHA` → `GITHUB_SHA` → `'unknown'`                |
-| `@region`      | option → `REGION` → `AWS_REGION` → `FLY_REGION` → `'unknown'`                       |
 | `@instance_id` | option → `HOSTNAME` → `os.hostname()` → random UUID                                 |
 | `@environment` | option → `NODE_ENV` → `'development'`                                               |
 
@@ -274,14 +267,11 @@ Most context fills itself in — set options only when auto-detection isn't enou
 | `LOG_LEVEL`                | `info` (prod) / `debug` (dev)     | Minimum log level                                       |
 | `NODE_ENV`                 | `development`                     | Environment; drives pretty/level defaults               |
 | `SERVICE_VERSION`          | `unknown`                         | `@version` base field                                   |
-| `COMMIT_SHA`               | `unknown`                         | `@commit_hash` base field                               |
-| `REGION`                   | `unknown`                         | `@region` base field                                    |
 | `HOSTNAME`                 | random UUID                       | `@instance_id` base field                               |
 | `SEQ_SERVER_URL`           | —                                 | Enables the Seq stream when set                         |
 | `SEQ_API_KEY`              | —                                 | Seq API key                                             |
 | `LOG_PRETTY`               | on unless production              | `1`/`true`/`0`/`false`                                  |
 | `LOG_REDACT_PATHS`         | —                                 | Comma-separated extra redaction paths                   |
-| `LOG_SAMPLE_RATE`          | `1` (keep all)                    | Keep rate 0–1 for healthy traffic                       |
 | `SEQ_MAX_BATCHING_TIME_MS` | pino-seq default                  | Seq batching window                                     |
 | `SEQ_EVENT_SIZE_LIMIT`     | pino-seq default                  | Per-event byte cap                                      |
 | `SEQ_BATCH_SIZE_LIMIT`     | pino-seq default                  | Per-batch byte cap                                      |
@@ -303,15 +293,15 @@ If you reach for `debug` to understand a request, add fields to the wide event i
 
 Consistent field names are what make cross-service queries possible:
 
-| Convention                | Examples                                                             |
-| ------------------------- | -------------------------------------------------------------------- |
-| snake_case everywhere     | `@request_id`, `@status_code`, `@user_agent`                         |
-| Unit suffixes             | `@duration_ms`, `@latency_ms`, `total_cents`, `lifetime_value_cents` |
-| Money in minor units      | `249900` not `2499.00`                                               |
-| Nested objects per domain | `user: { id, subscription }`, `cart: { ... }`, `payment: { ... }`    |
-| Outcome enum              | `@outcome: 'success' \| 'error' \| 'timeout' \| 'client_error'`      |
-| Uniform error shape       | `@error: { type, message, code, stack }`                             |
-| ISO-8601 UTC timestamps   | `@timestamp` (`2026-08-03T19:00:00.000Z`, automatic)                 |
+| Convention                | Examples                                                                                  |
+| ------------------------- | ----------------------------------------------------------------------------------------- |
+| snake_case everywhere     | `@request_id`, `@status_code`, `@user_agent`                                              |
+| Unit suffixes             | `@duration_ms`, `@latency_ms`, `total_cents`, `lifetime_value_cents`                      |
+| Money in minor units      | `249900` not `2499.00`                                                                    |
+| Nested objects per domain | `user: { id, subscription }`, `cart: { ... }`, `payment: { ... }`                         |
+| Outcome enum              | `@outcome: 'success' \| 'error' \| 'timeout' \| 'client_error'`                           |
+| Uniform error shape       | `@error: { type, message, code, stack, cause? }` (cause chains serialised, depth-bounded) |
+| ISO-8601 UTC timestamps   | `@timestamp` (`2026-08-03T19:00:00.000Z`, automatic)                                      |
 
 High cardinality is a feature: `@request_id`, `user_id`, and order IDs belong in your events. Modern log stores index them cheaply, and they're what make logs actually debuggable.
 
@@ -327,7 +317,7 @@ Sensitive fields are masked before serialization. Masking is **proportional to t
 'supersecret'  → '********ret'
 ```
 
-Default paths covered (each also as a `*.`-wildcard at any depth, plus `headers.*` variants where applicable):
+Default paths covered — each secret name is matched **at any nesting depth** (not just one level), plus explicit `headers.*` variants:
 
 `password`, `passwd`, `secret`, `authorization`, `x-api-key`, `cookie`, `set-cookie`, `token`, `access_token`, `refresh_token`, `id_token`, `api_key`, `apiKey`, `private_key`, `credit_card`, `card_number`, `cvv`, `ssn`
 
@@ -351,7 +341,13 @@ const { logger: custom } = createLogger({
 });
 ```
 
-`redactRemove` exists as an explicit escape hatch — removing a default should always be a conscious, reviewable decision.
+**How it works.** Redaction is the library's own single-pass walker (not pino's path-list `redact`, which is O(paths × depth) per top-level key and only matches one wildcard level). It runs before serialization, never mutates your objects, and skips branches that contain no match — events without sensitive fields pass through with zero allocation. Path semantics:
+
+- `password` / `*.password` — match the key at **any** depth
+- `headers.authorization` / `headers["x-api-key"]` — exact chain from the root (bracket notation supported)
+- `req.*.authorization` — `*` matches any single key in the chain
+
+`redactRemove` removes a name **and every variant of it** (`token` also removes `*.token`, `headers["set-cookie"]`-style entries with the same leaf name). It exists as an explicit escape hatch — removing a default should always be a conscious, reviewable decision.
 
 ## Seq setup
 
@@ -384,23 +380,6 @@ pino levels map to Seq levels:
 | `fatal` (60) | Fatal       |
 
 In development you'll get pretty console output **and** Seq ingestion simultaneously when `SEQ_SERVER_URL` is set — a convenient way to validate your Seq pipeline locally.
-
-## Tail sampling
-
-Naive random sampling throws away the exact events you'll need during an incident. Decide **after** the request completes: always keep errors, slow requests, and VIPs; sample healthy traffic at 1–5%:
-
-```js
-const { logger } = createLogger({
-  service: "billing-api",
-  sample: (event) =>
-    event["@outcome"] !== "success" || // always keep failures
-    event["@duration_ms"] > 1000 || // always keep slow requests
-    event.user?.subscription === "enterprise" || // always keep VIPs
-    Math.random() < 0.02, // sample 2% of healthy traffic
-});
-```
-
-Error outcomes **always** bypass sampling — the hook is never consulted for them.
 
 ## Graceful shutdown
 

@@ -7,12 +7,11 @@ const als = new AsyncLocalStorage();
 let _logger = null;
 
 /**
- * Wire the context module to the active logger and sampler.
+ * Wire the context module to the active logger.
  * Called by {@link createLogger}. Consumers should never call this directly.
  *
  * @param {object} deps
  * @param {import('pino').Logger} deps.logger
- * @param {function} deps.sampler - `(fields) => boolean`
  * @internal
  */
 export function initRequestContext({ logger }) {
@@ -25,6 +24,43 @@ export function initRequestContext({ logger }) {
  */
 export function resetRequestContext() {
   _logger = null;
+}
+
+/**
+ * True when `value` is a plain object (not an array, Date, Error, or class
+ * instance) — the only shapes a deep merge recurses into.
+ *
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isMergeable(value) {
+  return (
+    value != null &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (Object.getPrototypeOf(value) === Object.prototype ||
+      Object.getPrototypeOf(value) === null)
+  );
+}
+
+/**
+ * Recursively merge `source` into `target`, mutating `target`.
+ * Plain objects merge key-by-key; everything else (arrays, primitives, class
+ * instances) replaces. `target` is returned for convenience.
+ *
+ * @param {object} target
+ * @param {object} source
+ * @returns {object}
+ */
+function deepMerge(target, source) {
+  for (const [key, value] of Object.entries(source)) {
+    if (isMergeable(value) && isMergeable(target[key])) {
+      deepMerge(target[key], value);
+    } else {
+      target[key] = value;
+    }
+  }
+  return target;
 }
 
 /**
@@ -96,10 +132,12 @@ export function startEvent(fields = {}) {
 }
 
 /**
- * Deep‑merge business fields into the current wide event.
+ * Merge business fields into the current wide event.
  *
  * Call from route handlers, service methods, etc. to add domain context without
- * emitting a log line. No‑op when called outside an active event.
+ * emitting a log line. Nested plain objects are deep‑merged (later calls deepen
+ * earlier ones); arrays and primitives replace. No‑op when called outside an
+ * active event.
  *
  * @param {object} fields
  *
@@ -109,15 +147,17 @@ export function startEvent(fields = {}) {
 export function enrichEvent(fields = {}) {
   const store = als.getStore();
   if (!store) return;
-  Object.assign(store, fields);
+  deepMerge(store, fields);
 }
 
 /**
  * Finalise and emit the wide event.
  *
  * Computes `duration_ms` from the internal start time, sets `outcome`, attaches
- * a serialised `error` object when appropriate, removes internal fields, runs the
- * sampler, and emits exactly one log line (`info` for success, `error` for failure).
+ * a serialised `error` object when appropriate, removes internal fields, and
+ * emits exactly one log line (`info` for success, `error` for failure). A second
+ * call for the same event is a no‑op, so `endEvent` is safe in both a `catch`
+ * and a `finally`.
  *
  * No‑op when called outside an active event or before {@link startEvent}.
  *
@@ -130,13 +170,15 @@ export function enrichEvent(fields = {}) {
  */
 export function endEvent(outcome, extraFields = {}) {
   const store = als.getStore();
-  if (!store || !store._startHr) return;
+  if (!store || !store._startHr || store._ended) return;
+  store._ended = true;
 
   const elapsed = process.hrtime.bigint() - store._startHr;
   const durationMs = Math.round(Number(elapsed) / 1e6);
 
   const event = { ...store, "@outcome": outcome, "@duration_ms": durationMs };
   delete event._startHr;
+  delete event._ended;
 
   const { err, error, ...rest } = extraFields;
   if (err != null || error != null) {

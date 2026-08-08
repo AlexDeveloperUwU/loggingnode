@@ -15,6 +15,8 @@ describe("resolveConfig", () => {
     assert.ok(Object.isFrozen(config));
     assert.ok(!("commitHash" in config));
     assert.ok(!("region" in config));
+    assert.ok(!("sample" in config));
+    assert.ok(!("sampleRate" in config));
   });
 
   it("prefers an explicit option over an env var", () => {
@@ -109,6 +111,20 @@ describe("resolveConfig", () => {
     );
     assert.equal(config.seq.maxBatchingTime, 5000);
     assert.equal(config.seq.eventSizeLimit, 262144);
+  });
+
+  it("ignores non-numeric seq env vars instead of poisoning with NaN", () => {
+    const config = resolveConfig(
+      {},
+      {
+        SEQ_SERVER_URL: "http://s",
+        SEQ_MAX_BATCHING_TIME_MS: "garbage",
+        SEQ_BATCH_SIZE_LIMIT: "12x",
+      },
+    );
+    assert.ok(!("maxBatchingTime" in config.seq));
+    assert.ok(!("batchSizeLimit" in config.seq));
+    assert.equal(config.seq.serverUrl, "http://s");
   });
 
   it("sets seqLevel based on environment", () => {

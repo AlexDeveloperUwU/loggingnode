@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { Writable } from "node:stream";
 import { createLogger } from "../src/logger.js";
-import { enrichEvent } from "../src/context.js";
+import { enrichEvent, startEvent, endEvent } from "../src/context.js";
 import { expressMiddleware } from "../src/middleware/express.js";
 
 /**
@@ -188,6 +188,59 @@ describe("expressMiddleware", () => {
         const e = dest.parsed()[0];
         assert.deepEqual(e.user, { id: "u_1", subscription: "enterprise" });
         assert.equal(e.total_cents, 249900);
+      });
+
+      res.emit("finish");
+    });
+  });
+
+  it("includes startEvent-based fields in the emitted event", async () => {
+    // Regression: a handler that calls startEvent() replaces the withContext
+    // store — the middleware must emit from the live ALS store, not a stale one.
+    const dest = makeLogger();
+    const mw = expressMiddleware(h.logger);
+    const req = { method: "POST", url: "/checkout", headers: {} };
+    const res = stubRes();
+    res.statusCode = 201;
+
+    await new Promise((resolve) => {
+      mw(req, res, () => {
+        startEvent({ "@job": "handler-started" });
+        enrichEvent({ order_id: "ord_1" });
+        resolve();
+      });
+
+      res.on("finish", () => {
+        const e = dest.parsed()[0];
+        assert.equal(e["@job"], "handler-started");
+        assert.equal(e.order_id, "ord_1");
+        assert.equal(e["@status_code"], 201);
+      });
+
+      res.emit("finish");
+    });
+  });
+
+  it("emits exactly one event when the handler calls endEvent", async () => {
+    // A handler that completes the wide event itself must not produce a second
+    // line from the middleware's finish handler.
+    const dest = makeLogger();
+    const mw = expressMiddleware(h.logger);
+    const req = { method: "POST", url: "/checkout", headers: {} };
+    const res = stubRes();
+    res.statusCode = 201;
+
+    await new Promise((resolve) => {
+      mw(req, res, () => {
+        startEvent({});
+        endEvent("success", { order_id: "ord_1" });
+        resolve();
+      });
+
+      res.on("finish", () => {
+        const events = dest.parsed();
+        assert.equal(events.length, 1);
+        assert.equal(events[0].order_id, "ord_1");
       });
 
       res.emit("finish");

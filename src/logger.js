@@ -2,7 +2,7 @@ import pino from "pino";
 import { resolveConfig, detectContext } from "./config.js";
 import { buildDestinations } from "./streams.js";
 import { errSerializer, errorSerializer } from "./serializers.js";
-import { buildRedact } from "./redaction.js";
+import { buildRedact, createRedactor } from "./redaction.js";
 import { initRequestContext } from "./context.js";
 
 let _handle = null;
@@ -74,15 +74,16 @@ export function createLogger(options = {}) {
         'Consider "info" or higher.\n',
     );
   }
-
   const tag = buildTag(config.service);
   const msgPrefix = `[${tag}] · `;
 
-  const redact = buildRedact({
-    paths: [...config.redact, ...config.redactEnvPaths],
-    remove: config.redactRemove,
-    censor: config.redactCensor,
-  });
+  const redact = createRedactor(
+    buildRedact({
+      paths: [...config.redact, ...config.redactEnvPaths],
+      remove: config.redactRemove,
+      censor: config.redactCensor,
+    }),
+  );
 
   const { streams, seqStream } = buildDestinations(config);
 
@@ -110,14 +111,25 @@ export function createLogger(options = {}) {
       ...config.serializers,
     },
 
-    redact,
-
     hooks: {
       logMethod(args, method) {
         for (let i = 0; i < Math.min(args.length, 2); i++) {
           if (typeof args[i] === "string") {
             args[i] = `${msgPrefix}${args[i]}`;
             break;
+          }
+        }
+        // Deep-redact the merging object and any interpolated objects. The
+        // library owns redaction (a single-pass walker) rather than pino's
+        // path-list redact, which is O(paths × depth) per top-level key.
+        for (let i = 0; i < args.length; i++) {
+          const arg = args[i];
+          if (
+            arg !== null &&
+            typeof arg === "object" &&
+            !(arg instanceof Error)
+          ) {
+            args[i] = redact(arg);
           }
         }
         return method.apply(this, args);
@@ -134,7 +146,7 @@ export function createLogger(options = {}) {
     logger = pino(pinoOpts, streams[0].stream);
   }
 
-  initRequestContext({ logger, sampler: null });
+  initRequestContext({ logger });
 
   async function flush() {
     await logger.flush();

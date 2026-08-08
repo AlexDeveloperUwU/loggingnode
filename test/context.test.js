@@ -68,6 +68,31 @@ describe("wide‑event context", () => {
     });
   });
 
+  it("enrichEvent deep‑merges nested objects across multiple calls", async () => {
+    await withContext({}, async () => {
+      startEvent({});
+      enrichEvent({ user: { id: "u_1" }, feature_flags: { a: true } });
+      enrichEvent({
+        user: { subscription: "enterprise" },
+        feature_flags: { b: 2 },
+      });
+      const store = getContext();
+      assert.deepEqual(store.user, { id: "u_1", subscription: "enterprise" });
+      assert.deepEqual(store.feature_flags, { a: true, b: 2 });
+    });
+  });
+
+  it("enrichEvent replaces arrays and primitives rather than merging them", async () => {
+    await withContext({}, async () => {
+      startEvent({});
+      enrichEvent({ tags: ["a"], note: "first" });
+      enrichEvent({ tags: ["b", "c"], note: "second" });
+      const store = getContext();
+      assert.deepEqual(store.tags, ["b", "c"]);
+      assert.equal(store.note, "second");
+    });
+  });
+
   it("enrichEvent is a no‑op outside a context", () => {
     assert.doesNotThrow(() => enrichEvent({ key: "val" }));
   });
@@ -121,6 +146,16 @@ describe("wide‑event context", () => {
       type: "NonErrorThrow",
       message: "just a string",
     });
+  });
+
+  it("endEvent emits exactly one line when called twice (dedupe)", async () => {
+    await withContext({}, async () => {
+      startEvent();
+      endEvent("success");
+      endEvent("success"); // second call is a no‑op
+      await flush();
+    });
+    assert.equal(dest.parsed().length, 1);
   });
 
   it("endEvent is a no‑op when startEvent was never called", async () => {

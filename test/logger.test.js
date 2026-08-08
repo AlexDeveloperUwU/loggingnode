@@ -28,8 +28,6 @@ describe("createLogger", () => {
       service: "test-svc",
       environment: "test",
       version: "1.0.0",
-      commitHash: "abc1234",
-      region: "eu-west",
       instanceId: "instance-1",
       destination: dest,
       pretty: false,
@@ -162,6 +160,38 @@ describe("createLogger", () => {
 
     assert.notEqual(e.password, "hunter2");
     assert.equal(e.user, "alice");
+  });
+
+  it("redacts through child loggers", () => {
+    const { logger, flush } = createLogger({
+      service: "svc",
+      destination: dest,
+      pretty: false,
+    });
+
+    logger
+      .child({ component: "stripe" })
+      .info({ api_key: "sk_live_123" }, "call");
+    flush();
+    assert.notEqual(dest.parsed()[0].api_key, "sk_live_123");
+  });
+
+  it("redacts objects interpolated into the message", () => {
+    const { logger, flush } = createLogger({
+      service: "svc",
+      destination: dest,
+      pretty: false,
+    });
+
+    logger.info("order %j", { password: "hunter2", ok: true });
+    flush();
+    const raw = dest.parsed()[0];
+    // The interpolated payload is serialised inside msg as a JSON string.
+    assert.ok(raw.msg.includes('"ok":true'));
+    assert.ok(
+      !raw.msg.includes("hunter2"),
+      "secret must not leak via interpolation",
+    );
   });
 
   it("uses the custom censor when provided", () => {

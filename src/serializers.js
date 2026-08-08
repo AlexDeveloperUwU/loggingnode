@@ -46,11 +46,20 @@ export function errSerializer(value) {
 export const errorSerializer = errSerializer;
 
 /**
+ * Maximum depth of recursive `cause` serialisation (guards against cycles).
+ */
+const MAX_CAUSE_DEPTH = 5;
+
+/**
  * Produce a uniform wide-event error shape suitable for the `error` field in a
  * canonical log line.
  *
+ * Error `cause` chains are serialised recursively (bounded to {@link MAX_CAUSE_DEPTH})
+ * so `error.cause` debugging chains survive into the log.
+ *
  * @param {unknown} value - An Error instance or any thrown value.
- * @returns {{ type: string, message: string, code?: string, stack?: string }}
+ * @param {number} [depth=0] - Internal recursion guard.
+ * @returns {{ type: string, message: string, code?: string, stack?: string, cause?: object }}
  *
  * @example
  * try { throw new TypeError('bad input'); } catch (err) {
@@ -62,7 +71,7 @@ export const errorSerializer = errSerializer;
  * serializeError('oops')
  * // → { type: 'NonErrorThrow', message: 'oops' }
  */
-export function serializeError(value) {
+export function serializeError(value, depth = 0) {
   if (value instanceof Error) {
     const obj = {
       type: value.constructor.name,
@@ -70,6 +79,9 @@ export function serializeError(value) {
     };
     if (value.code != null) obj.code = String(value.code);
     if (value.stack != null) obj.stack = value.stack;
+    if (value.cause != null && depth < MAX_CAUSE_DEPTH) {
+      obj.cause = serializeError(value.cause, depth + 1);
+    }
     return obj;
   }
   return { type: "NonErrorThrow", message: String(value) };

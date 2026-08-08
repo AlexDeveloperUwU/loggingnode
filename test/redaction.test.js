@@ -6,6 +6,7 @@ import {
   DEFAULT_REDACT_PATHS,
   defaultCensor,
   buildRedact,
+  createRedactor,
 } from "../src/redaction.js";
 
 describe("defaultCensor", () => {
@@ -70,6 +71,28 @@ describe("buildRedact", () => {
     assert.ok(redact.paths.includes("*.authorization"));
   });
 
+  it("redactRemove removes every depth variant of a name", () => {
+    const redact = buildRedact({ remove: ["token"] });
+    assert.ok(!redact.paths.includes("token"));
+    assert.ok(!redact.paths.includes("*.token"));
+    assert.ok(!redact.paths.includes("*.*.token"));
+    assert.ok(!redact.paths.includes("*.*.*.token"));
+    assert.ok(redact.paths.includes("password")); // unrelated names survive
+  });
+
+  it("redactRemove on a header name removes its headers.* variant too", () => {
+    const redact = buildRedact({ remove: ["x-api-key"] });
+    assert.ok(!redact.paths.includes('headers["x-api-key"]'));
+    assert.ok(redact.paths.includes('headers["set-cookie"]'));
+  });
+
+  it("defaults include every secret name bare and as *.name", () => {
+    for (const k of ["password", "token", "api_key"]) {
+      assert.ok(DEFAULT_REDACT_PATHS.includes(k), `top-level ${k}`);
+      assert.ok(DEFAULT_REDACT_PATHS.includes(`*.${k}`), `*.${k}`);
+    }
+  });
+
   it("accepts a custom censor string", () => {
     const redact = buildRedact({ censor: "X" });
     assert.equal(redact.censor, "X");
@@ -79,6 +102,105 @@ describe("buildRedact", () => {
     const fn = () => "custom";
     const redact = buildRedact({ censor: fn });
     assert.strictEqual(redact.censor, fn);
+  });
+});
+
+describe("createRedactor", () => {
+  it("matches bare names at any depth", () => {
+    const redact = createRedactor({ paths: ["password"] });
+    const out = redact({
+      password: "top",
+      user: { password: "one" },
+      config: { db: { password: "two" } },
+    });
+    assert.notEqual(out.password, "top");
+    assert.notEqual(out.user.password, "one");
+    assert.notEqual(out.config.db.password, "two");
+  });
+
+  it("matches *.name wildcards at any depth", () => {
+    const redact = createRedactor({ paths: ["*.token"] });
+    const out = redact({ a: { b: { token: "x" } } });
+    assert.notEqual(out.a.b.token, "x");
+  });
+
+  it("matches exact chains from the root", () => {
+    const redact = createRedactor({ paths: ["headers.authorization"] });
+    const out = redact({
+      headers: { authorization: "Bearer x", "x-forwarded-for": "1.2.3.4" },
+      nested: { headers: { authorization: "Bearer y" } },
+    });
+    assert.notEqual(out.headers.authorization, "Bearer x");
+    // Exact chains only match at the root, not deeper.
+    assert.equal(out.nested.headers.authorization, "Bearer y");
+  });
+
+  it("supports bracket notation with quotes", () => {
+    const redact = createRedactor({ paths: ['headers["x-api-key"]'] });
+    const out = redact({ headers: { "x-api-key": "sk-1" } });
+    assert.notEqual(out.headers["x-api-key"], "sk-1");
+  });
+
+  it("supports * wildcards mid-chain", () => {
+    const redact = createRedactor({ paths: ["req.*.authorization"] });
+    const out = redact({ req: { headers: { authorization: "Bearer z" } } });
+    assert.notEqual(out.req.headers.authorization, "Bearer z");
+  });
+
+  it("a lone * matches every key at every depth", () => {
+    const redact = createRedactor({ paths: ["*"] });
+    const out = redact({ a: 1, user: { b: 2 } });
+    assert.notEqual(out.a, 1);
+    assert.notEqual(out.user.b, 2);
+  });
+
+  it("returns the same reference when nothing matches (zero copy)", () => {
+    const redact = createRedactor({ paths: ["password"] });
+    const obj = { user: { id: "u_1" }, total_cents: 100 };
+    assert.strictEqual(redact(obj), obj);
+  });
+
+  it("returns the identity function for empty paths", () => {
+    const redact = createRedactor({ paths: [] });
+    const obj = { password: "x" };
+    assert.strictEqual(redact(obj), obj);
+  });
+
+  it("does not mutate the original object", () => {
+    const redact = createRedactor({ paths: ["password"] });
+    const obj = { user: { password: "x" } };
+    const out = redact(obj);
+    assert.notEqual(out.user.password, "x");
+    assert.equal(obj.user.password, "x");
+  });
+
+  it("redacts inside arrays", () => {
+    const redact = createRedactor({ paths: ["password"] });
+    const out = redact({ users: [{ password: "a" }, { password: "b" }] });
+    assert.notEqual(out.users[0].password, "a");
+    assert.notEqual(out.users[1].password, "b");
+  });
+
+  it("passes the key chain to a censor function", () => {
+    const redact = createRedactor({
+      paths: ["password"],
+      censor: (value, path) => `${path.join(".")}:${value}`,
+    });
+    const out = redact({ user: { password: "x" } });
+    assert.equal(out.user.password, "user.password:x");
+  });
+
+  it("applies a string censor", () => {
+    const redact = createRedactor({ paths: ["password"], censor: "REDACTED" });
+    assert.equal(redact({ password: "x" }).password, "REDACTED");
+  });
+
+  it("treats class instances as opaque values", () => {
+    const redact = createRedactor({ paths: ["password"] });
+    const date = new Date(0);
+    const out = redact({ when: date, password: "x" });
+    assert.strictEqual(out.when, date);
+    assert.notEqual(out.password, "x");
   });
 });
 
@@ -109,6 +231,43 @@ describe("redaction (integration via createLogger)", () => {
     // headers.authorization should NOT be 'Bearer xyz'
     assert.notEqual(e.headers.authorization, "Bearer xyz");
     assert.notEqual(e.headers.cookie, "sid=abc");
+  });
+
+  it("redacts secrets nested two and three levels deep", () => {
+    const dest = createMemoryStream();
+    const { logger, flush } = createLogger({
+      service: "test",
+      destination: dest,
+      pretty: false,
+    });
+
+    logger.info(
+      {
+        config: { database: { password: "lvl2" } },
+        user: { session: { token: "lvl2-tok" } },
+        a: { b: { c: { password: "lvl3" } } },
+      },
+      "msg",
+    );
+    flush();
+
+    const e = dest.parsed()[0];
+    assert.notEqual(e.config.database.password, "lvl2");
+    assert.notEqual(e.user.session.token, "lvl2-tok");
+    assert.notEqual(e.a.b.c.password, "lvl3");
+  });
+
+  it("redacts secrets at any depth, not just one level", () => {
+    const dest = createMemoryStream();
+    const { logger, flush } = createLogger({
+      service: "test",
+      destination: dest,
+      pretty: false,
+    });
+
+    logger.info({ a: { b: { c: { d: { password: "lvl4" } } } } }, "msg");
+    flush();
+    assert.notEqual(dest.parsed()[0].a.b.c.d.password, "lvl4");
   });
 
   it("redactRemove lets a removed default path through unchanged", () => {
