@@ -126,7 +126,7 @@ describe("wide‑event context", () => {
     const e = events[0];
     assert.equal(e.level, "error");
     assert.equal(e["@outcome"], "error");
-    assert.equal(e.msg, "[CON] · request failed");
+    assert.equal(e.msg, "[CON] · Request failed");
     assert.deepEqual(e["@error"], {
       type: "TypeError",
       message: "bad type",

@@ -47,10 +47,10 @@ import { createLogger } from "@alexdevuwu/logging";
 
 const { logger, close } = createLogger({ service: "billing-api" });
 
-logger.info({ order_id: "ord_123", total_cents: 249900 }, "order created");
+logger.info({ order_id: "ord_123", total_cents: 249900 }, "Order created");
 
 const stripe = logger.child({ component: "stripe" });
-stripe.warn({ customer_id: "cus_456", attempt: 2 }, "payment retried");
+stripe.warn({ customer_id: "cus_456", attempt: 2 }, "Payment retried");
 
 // On shutdown (see Graceful shutdown):
 await close();
@@ -68,7 +68,7 @@ Output (production):
   "@instance_id": "web-1",
   "order_id": "ord_123",
   "total_cents": 249900,
-  "msg": "[BIL] · order created"
+  "msg": "[BIL] · Order created"
 }
 ```
 
@@ -81,10 +81,34 @@ Every event automatically carries the environment context (`@service`, `@version
 Every log message is automatically prefixed with your app's three-letter tag:
 
 ```
-[BIL] · order created
+[BIL] · Order created
 ```
 
 The tag is derived from the service name: first three letters, uppercased. Short names are padded with `*` to always fill the three slots (`ap` → `AP*`, `x` → `X**`); when no service name can be determined the tag is `UNK`. The prefix is constant per service, so Seq's message-template grouping is unaffected.
+
+**Message casing.** Write the message itself (the part after `· `) in sentence case — capitalize only the first word: `"Order created"`, not `"order created"` or `"ORDER CREATED"`. It's the plain English convention and reads cleanly next to the `[APP] ·` tag. The library's own built-in messages (`Request completed`, `Request failed`) follow this; match it for your own application messages.
+
+## Logger vs. wide events — which to use
+
+The library exposes two things: the raw pino `logger`, and the wide-event functions (`startEvent`/`enrichEvent`/`endEvent`). They are **not** two competing ways to log — the wide-event functions are a thin layer on top of the same logger. `enrichEvent`/`startEvent` just stage fields on a plain object; only `endEvent` actually calls `logger.info`/`logger.error` under the hood. There is exactly one thing that ever writes a line.
+
+The rule for which one you call:
+
+- **Did this happen during a request or job?** (It has a `@request_id`, a `job_run_id`, some unit-of-work it belongs to.) → `enrichEvent`. Never call `logger.info`/`.error` directly inside a handler — that's a second, competing line, which is exactly what wide events exist to prevent.
+- **Did this happen outside any request/job?** (Startup, shutdown, a migration script, a fatal config error before anything else has run.) → call `logger` directly. There's no unit of work to attach the fields to, so `startEvent`/`enrichEvent`/`endEvent` don't apply.
+
+```js
+const { logger, close } = createLogger({ service: "billing-api" });
+
+logger.info({ port: 3000 }, "Server listening"); // lifecycle — no request, call the logger directly
+
+app.post("/checkout", async (req, res) => {
+  enrichEvent({ order_id: order.id }); // inside a request — enrich, never log directly
+  res.status(201).json(order);
+});
+```
+
+This is also why `logger.info`/`logger.child()` and `enrichEvent`/`endEvent` are grouped together under `info` in [Log levels — guidance](#log-levels--guidance): they're two different shapes of the same level, not two different systems.
 
 ## Wide events (the point of this library)
 
@@ -148,7 +172,7 @@ The single emitted event:
   "total_cents": 249900,
   "feature_flags": { "new_payment_flow": true },
   "@service": "billing-api",
-  "msg": "[BIL] · request completed"
+  "msg": "[BIL] · Request completed"
 }
 ```
 
@@ -238,6 +262,7 @@ await withContext(
 | `seq.logOtherAs`           | string             | —                                            | Seq level for unstructured (non-JSON) output: `'Verbose'`…`'Fatal'`                                |
 | `seq.*`                    | any                | —                                            | Any other [`seq-logging`](https://github.com/datalust/seq-logging) option passes through untouched |
 | `seqLevel`                 | string             | `'info'` (dev) / `'warn'` (prod)             | Minimum level routed to Seq                                                                        |
+| `outcomeLevels`            | object             | see [Outcome semantics](#outcome-semantics)  | Per-`@outcome` pino level overrides for wide-event emission, merged over the built-in defaults     |
 | `redact`                   | string[]           | —                                            | Extra redaction paths, union-merged with the defaults                                              |
 | `redactRemove`             | string[]           | —                                            | Deliberately remove default redaction paths                                                        |
 | `redactCensor`             | string \| function | proportional mask (see Redaction)            | Replacement value, or `(value, path) => string` for full control                                   |
@@ -330,6 +355,29 @@ await withContext({ job: "nightly-settlement" }, async () => {
 The same code path can legitimately emit different outcome values across different calls it makes — `@outcome` describes the failed _interaction_, not a fixed identity of the service.
 
 This redefines what the field _means_; it doesn't imply the library runs outside Node. `node:crypto`, `AsyncLocalStorage`, and pino's output are all Node-only — running this library in a browser (e.g. a Vue app) isn't supported.
+
+### Which pino level each outcome is emitted at
+
+`@outcome` and the emitted pino **level** are separate concerns: `@outcome` is the queryable fact, the level controls how loudly it shows up (alerting, dashboards). By default:
+
+| `@outcome`     | pino level |
+| -------------- | ---------- |
+| `success`      | `info`     |
+| `client_error` | `info`     |
+| `server_error` | `error`    |
+| `error`        | `error`    |
+| `unknown`      | `info`     |
+
+`client_error` stays at `info` by default because a correctly-rejected bad request isn't a bug in your service — routing it to `error` would flood error-level alerting with noise nobody should page on. Override any of these per project via `outcomeLevels`:
+
+```js
+const { logger } = createLogger({
+  service: "billing-api",
+  outcomeLevels: { client_error: "warn" }, // e.g. surface bad requests more visibly without treating them as a fault
+});
+```
+
+Only real pino levels (`trace`/`debug`/`info`/`warn`/`error`/`fatal`) are accepted — an invalid value is ignored with a one-time stderr warning, falling back to the default for that outcome. The emitted message text ("Request completed" vs "Request failed") still reflects whether the outcome is a fault (`server_error`/`error`) regardless of which level you route it to — overriding the level changes volume, not meaning. `DEFAULT_OUTCOME_LEVELS` is exported if you want to read or extend the defaults programmatically.
 
 ## Field conventions
 
@@ -433,7 +481,7 @@ import { createLogger } from "@alexdevuwu/logging";
 const { logger, close } = createLogger({ service: "billing-api" });
 
 async function shutdown(signal) {
-  logger.info({ signal }, "shutdown requested");
+  logger.info({ signal }, "Shutdown requested");
   try {
     await Promise.race([
       close(), // flushes pino + the Seq batch buffer (idempotent)
@@ -454,7 +502,7 @@ process.on("SIGINT", () => void shutdown("SIGINT"));
 
 - **`console.log`** — unstructured, unlevelled, unqueryable, uncorrelated
 - **Per-file logger instances** — configure once, use `logger.child({ component })` instead
-- **String interpolation** — `logger.info(\`order ${id} failed\`)`destroys Seq's template grouping; use fields:`logger.info({ order_id: id }, 'order failed')`
+- **String interpolation** — `logger.info(\`order ${id} failed\`)`destroys Seq's template grouping; use fields:`logger.info({ order_id: id }, 'Order failed')`
 - **Scattered lines per request** — ten partial lines are worse than one wide event; enrich, don't log
 - **Missing request correlation** — every event carries `@request_id`; propagate `x-request-id` across service hops
 - **Logging secrets** — default redaction covers the common cases; extend it when you add a new secret-bearing field

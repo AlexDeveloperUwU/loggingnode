@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-19
+
+### Added
+
+- `outcomeLevels` option on `createLogger` — per-`@outcome` pino level overrides for wide-event emission (e.g. route `client_error` to `warn` instead of the default `info`), merged over new exported defaults `DEFAULT_OUTCOME_LEVELS`. Invalid pino level values are ignored with a one-time stderr warning instead of throwing. Also exports `isFaultOutcome`/`resolveOutcomeLevel` for programmatic access to the resolution logic.
+
+### Changed
+
+- The library's own built-in wide-event messages are now sentence case: `"Request completed"`/`"Request failed"` instead of `"request completed"`/`"request failed"`. Documented as the recommended convention for application messages too.
+- `endEvent` and `expressMiddleware` now share one emission path (`emitOutcome` in `src/context.js`) instead of duplicating the outcome→level branching.
+
 ## [2.0.0] - 2026-08-19
 
 ### Changed

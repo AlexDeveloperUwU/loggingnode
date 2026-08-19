@@ -4,7 +4,72 @@ import { serializeError } from "./serializers.js";
 
 const als = new AsyncLocalStorage();
 
+/**
+ * Default pino level used to emit each `@outcome` value. `server_error`/`error`
+ * mean *our* side broke on a request it should have handled — the only cases
+ * that default to `error`. `client_error` is a correctly-rejected bad request,
+ * not a bug, so it stays at `info` by default.
+ *
+ * Override per-outcome via `createLogger({ outcomeLevels: { client_error: 'warn' } })`.
+ */
+export const DEFAULT_OUTCOME_LEVELS = Object.freeze({
+  success: "info",
+  client_error: "info",
+  server_error: "error",
+  error: "error",
+  unknown: "info",
+});
+
 let _logger = null;
+let _outcomeLevels = DEFAULT_OUTCOME_LEVELS;
+
+/**
+ * True when `outcome` represents a failure on *our* side (as opposed to a
+ * correctly-rejected bad request). Drives the emitted message text
+ * ("Request completed" vs "Request failed") independently of whatever pino
+ * level `outcomeLevels` routes the line to.
+ *
+ * @param {string} outcome
+ * @returns {boolean}
+ */
+export function isFaultOutcome(outcome) {
+  return outcome === "server_error" || outcome === "error";
+}
+
+/**
+ * Resolve the pino level to emit a given `@outcome` at, honouring any
+ * `outcomeLevels` override passed to {@link initRequestContext}. Unknown
+ * outcome strings fall back to the fault/non-fault default.
+ *
+ * @param {string} outcome
+ * @returns {'trace'|'debug'|'info'|'warn'|'error'|'fatal'}
+ */
+export function resolveOutcomeLevel(outcome) {
+  return (
+    _outcomeLevels[outcome] ?? (isFaultOutcome(outcome) ? "error" : "info")
+  );
+}
+
+/**
+ * Emit `event` on `logger` at the level resolved for `outcome`, with the
+ * standard "Request completed"/"Request failed" message. Shared by
+ * {@link endEvent} and the Express middleware so both paths stay consistent
+ * with a configured `outcomeLevels` override.
+ *
+ * @param {import('pino').Logger} logger
+ * @param {object} event
+ * @param {string} outcome
+ */
+export function emitOutcome(logger, event, outcome) {
+  const fault = isFaultOutcome(outcome);
+  const level = resolveOutcomeLevel(outcome);
+  const message = fault ? "Request failed" : "Request completed";
+  const fn =
+    typeof logger[level] === "function"
+      ? logger[level]
+      : logger[fault ? "error" : "info"];
+  fn.call(logger, event, message);
+}
 
 /**
  * Wire the context module to the active logger.
@@ -12,10 +77,16 @@ let _logger = null;
  *
  * @param {object} deps
  * @param {import('pino').Logger} deps.logger
+ * @param {Object<string,string>} [deps.outcomeLevels] - Per-outcome pino level
+ *   overrides, already validated against real pino levels. Merged over
+ *   {@link DEFAULT_OUTCOME_LEVELS}.
  * @internal
  */
-export function initRequestContext({ logger }) {
+export function initRequestContext({ logger, outcomeLevels }) {
   _logger = logger;
+  _outcomeLevels = outcomeLevels
+    ? { ...DEFAULT_OUTCOME_LEVELS, ...outcomeLevels }
+    : DEFAULT_OUTCOME_LEVELS;
 }
 
 /**
@@ -24,6 +95,7 @@ export function initRequestContext({ logger }) {
  */
 export function resetRequestContext() {
   _logger = null;
+  _outcomeLevels = DEFAULT_OUTCOME_LEVELS;
 }
 
 /**
@@ -155,9 +227,10 @@ export function enrichEvent(fields = {}) {
  *
  * Computes `duration_ms` from the internal start time, sets `outcome`, attaches
  * a serialised `error` object when appropriate, removes internal fields, and
- * emits exactly one log line (`info` for success, `error` for failure). A second
- * call for the same event is a no‑op, so `endEvent` is safe in both a `catch`
- * and a `finally`.
+ * emits exactly one log line — at the pino level {@link resolveOutcomeLevel}
+ * resolves for `outcome` (`info`/`error` by default; configurable per-outcome
+ * via `createLogger({ outcomeLevels })`). A second call for the same event is
+ * a no‑op, so `endEvent` is safe in both a `catch` and a `finally`.
  *
  * No‑op when called outside an active event or before {@link startEvent}.
  *
@@ -195,9 +268,5 @@ export function endEvent(outcome, extraFields = {}) {
 
   if (!_logger) return;
 
-  if (outcome === "success" || outcome === "client_error") {
-    _logger.info(event, "request completed");
-  } else {
-    _logger.error(event, "request failed");
-  }
+  emitOutcome(_logger, event, outcome);
 }

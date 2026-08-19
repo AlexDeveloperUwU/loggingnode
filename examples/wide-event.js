@@ -78,9 +78,9 @@ try {
       { sku: "GADGET", priceCents: 150000 },
     ],
   });
-  logger.info({ all_good: true }, "checkout succeeded");
+  logger.info({ all_good: true }, "Checkout succeeded");
 } catch (err) {
-  logger.error({ err }, "checkout failed");
+  logger.error({ err }, "Checkout failed");
 }
 
 await close();

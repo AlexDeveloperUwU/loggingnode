@@ -62,7 +62,7 @@ const server = app.listen(0, () => {
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────
 async function shutdown(signal) {
-  logger.info({ signal }, "shutdown requested");
+  logger.info({ signal }, "Shutdown requested");
   server.close();
   await close();
   process.exit(0);

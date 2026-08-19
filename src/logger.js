@@ -14,6 +14,35 @@ function warnOnce(key, message) {
   process.stderr.write(message);
 }
 
+const VALID_PINO_LEVELS = new Set([
+  "trace",
+  "debug",
+  "info",
+  "warn",
+  "error",
+  "fatal",
+]);
+
+/**
+ * Drop and warn about `outcomeLevels` entries that aren't real pino levels,
+ * instead of silently failing to log or throwing at emission time.
+ */
+function validateOutcomeLevels(outcomeLevels) {
+  const valid = {};
+  for (const [outcome, level] of Object.entries(outcomeLevels)) {
+    if (VALID_PINO_LEVELS.has(level)) {
+      valid[outcome] = level;
+    } else {
+      warnOnce(
+        `outcome-level-${outcome}`,
+        `[AlexDevUwU.Logging] WARNING: outcomeLevels.${outcome} = "${level}" is not a valid pino level ` +
+          `(trace/debug/info/warn/error/fatal) — ignoring override for "${outcome}".\n`,
+      );
+    }
+  }
+  return valid;
+}
+
 /**
  * First three letters, uppercased; non‑alphanumeric characters stripped;
  * `*`‑padded or `UNK` fallback.
@@ -45,7 +74,7 @@ function buildTag(service) {
  * @example
  * import { createLogger } from '@alexdevuwu/logging';
  * const { logger, close } = createLogger({ service: 'billing-api' });
- * logger.info({ order_id: 'ord_123' }, 'order created');
+ * logger.info({ order_id: 'ord_123' }, 'Order created');
  */
 export function createLogger(options = {}) {
   const config = resolveConfig(options, process.env, detectContext());
@@ -146,7 +175,10 @@ export function createLogger(options = {}) {
     logger = pino(pinoOpts, streams[0].stream);
   }
 
-  initRequestContext({ logger });
+  initRequestContext({
+    logger,
+    outcomeLevels: validateOutcomeLevels(config.outcomeLevels),
+  });
 
   async function flush() {
     await logger.flush();

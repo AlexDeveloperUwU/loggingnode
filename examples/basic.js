@@ -9,18 +9,18 @@ import { createLogger } from "@alexdevuwu/logging";
 
 const { logger, close } = createLogger({ service: "basic-example" });
 
-logger.info({ startup: true }, "logger initialised");
-logger.debug({ detail: "verbose" }, "debug is on in development");
+logger.info({ startup: true }, "Logger initialised");
+logger.debug({ detail: "verbose" }, "Debug is on in development");
 
 const stripeLogger = logger.child({ component: "stripe" });
 stripeLogger.info(
   { customer_id: "cus_42", amount_cents: 1499 },
-  "payment succeeded",
+  "Payment succeeded",
 );
 
-stripeLogger.warn({ customer_id: "cus_42", attempt: 3 }, "payment retry");
+stripeLogger.warn({ customer_id: "cus_42", attempt: 3 }, "Payment retry");
 
-logger.info({ cleanup: true }, "example complete");
+logger.info({ cleanup: true }, "Example complete");
 
 await close();
 console.log("Done — all events flushed.");

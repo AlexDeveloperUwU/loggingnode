@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { withContext, getContext } from "../context.js";
+import { withContext, getContext, emitOutcome } from "../context.js";
 
 /**
  * Create Express (or Connect‑compatible) middleware that produces **one wide event**
@@ -76,11 +76,7 @@ export function expressMiddleware(logger) {
       delete event._startHr;
       delete event._ended;
 
-      if (outcome === "server_error") {
-        logger.error(event, "request failed");
-      } else {
-        logger.info(event, "request completed");
-      }
+      emitOutcome(logger, event, outcome);
     }
   };
 }

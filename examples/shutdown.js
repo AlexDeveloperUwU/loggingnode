@@ -11,18 +11,18 @@ import { createLogger } from "@alexdevuwu/logging";
 
 const { logger, close } = createLogger({ service: "shutdown-demo" });
 
-logger.info({ uptime: process.uptime() }, "process started");
+logger.info({ uptime: process.uptime() }, "Process started");
 
 // Simulate some work.
 let counter = 0;
 const timer = setInterval(() => {
   counter += 1;
-  logger.info({ counter }, "tick");
+  logger.info({ counter }, "Tick");
 }, 1000);
 
 // ── Shutdown handler ──────────────────────────────────────────────────────
 async function shutdown(signal) {
-  logger.info({ signal, final_counter: counter }, "shutdown requested");
+  logger.info({ signal, final_counter: counter }, "Shutdown requested");
   clearInterval(timer);
 
   // Flush pino + pino‑seq batches, with a 5 s timeout so we don't hang

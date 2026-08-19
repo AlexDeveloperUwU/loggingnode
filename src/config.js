@@ -226,6 +226,8 @@ export function resolveConfig(options = {}, env = {}, detected = {}) {
     seq,
     /** Minimum level routed to the Seq stream. */
     seqLevel,
+    /** Per-outcome pino level overrides, merged over the built-in defaults. */
+    outcomeLevels: options.outcomeLevels ?? {},
     /** Extra redaction path descriptors to merge with the defaults. */
     redact: options.redact ?? [],
     /** Default redaction paths to deliberately remove. */

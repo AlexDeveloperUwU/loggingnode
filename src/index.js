@@ -19,6 +19,9 @@ export {
   getContext,
   initRequestContext,
   resetRequestContext,
+  DEFAULT_OUTCOME_LEVELS,
+  isFaultOutcome,
+  resolveOutcomeLevel,
 } from "./context.js";
 
 export {
