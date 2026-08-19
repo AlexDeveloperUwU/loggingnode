@@ -5,14 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-19
+
+### Changed
+
+- **BREAKING:** `@outcome` enum redefined — `success | client_error | server_error | error | unknown`. `client_error`/`server_error` are now role-based (request-side fault vs. handler-side fault) and usable from any call site, not just Express middleware — its 5xx case now emits `server_error` instead of `error`. Plain `error` narrows to unclassified failures with no request/response shape. `timeout` removed with no direct replacement; `unknown` added as a fallback for undetermined outcomes.
+
 ## [1.0.1] - 2026-08-13
 
 ### Changed
+
 - Dummy version
 
 ## [1.0.0] - 2026-08-13
 
 ### Added
+
 - Wide events — one canonical log line per request per service, enriched throughout lifecycle, emitted once at the end
 - Request correlation — automatic `@request_id` generation with `x-request-id` header propagation across services
 - AsyncLocalStorage context — enrich the current request's event from anywhere in the call stack without parameter threading

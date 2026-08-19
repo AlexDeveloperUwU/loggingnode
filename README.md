@@ -289,6 +289,48 @@ All pino levels are available, but the library is designed around a simpler disc
 
 If you reach for `debug` to understand a request, add fields to the wide event instead — you'll have them in production too.
 
+## Outcome semantics
+
+`@outcome` is `'success' | 'client_error' | 'server_error' | 'error' | 'unknown'`. `client_error` and `server_error` are **role-based**, not HTTP-specific: for whichever call just failed, was the request bad, or did the thing handling it break despite a valid request?
+
+- `client_error` — the request-maker sent something bad (malformed, invalid, unauthorized).
+- `server_error` — the handler failed despite a valid request.
+- `error` — no request/response shape applies at all (a parsing bug, a corrupted file, a logic error).
+- `unknown` — outcome couldn't be determined.
+
+**Express (inbound request — your service is the handler):**
+
+```javascript
+// Missing/invalid field in the request body → client_error (their request, not your bug)
+// Valid request, but the DB connection drops mid-handler → server_error (you broke on a fine request)
+```
+
+The middleware determines this automatically from the response status code — you never set it by hand in a route handler.
+
+**Non-HTTP (this code is the request-maker — e.g. a cron job calling a downstream API):**
+
+```javascript
+await withContext({ job: "nightly-settlement" }, async () => {
+  startEvent({ job_run_id: run.id });
+  try {
+    await callDownstreamApi(payload);
+    endEvent("success");
+  } catch (err) {
+    // Stale API key / malformed payload sent downstream → client_error
+    // (you sent a bad request, even though nothing here is a browser or Express route)
+    // Valid payload, but the downstream API 500s → server_error
+    // (the downstream handler broke, not your job)
+    const outcome = err.statusCode >= 500 ? "server_error" : "client_error";
+    endEvent(outcome, { err });
+    throw err;
+  }
+});
+```
+
+The same code path can legitimately emit different outcome values across different calls it makes — `@outcome` describes the failed _interaction_, not a fixed identity of the service.
+
+This redefines what the field _means_; it doesn't imply the library runs outside Node. `node:crypto`, `AsyncLocalStorage`, and pino's output are all Node-only — running this library in a browser (e.g. a Vue app) isn't supported.
+
 ## Field conventions
 
 Consistent field names are what make cross-service queries possible:
@@ -299,7 +341,7 @@ Consistent field names are what make cross-service queries possible:
 | Unit suffixes             | `@duration_ms`, `@latency_ms`, `total_cents`, `lifetime_value_cents`                      |
 | Money in minor units      | `249900` not `2499.00`                                                                    |
 | Nested objects per domain | `user: { id, subscription }`, `cart: { ... }`, `payment: { ... }`                         |
-| Outcome enum              | `@outcome: 'success' \| 'error' \| 'timeout' \| 'client_error'`                           |
+| Outcome enum              | `@outcome: 'success' \| 'client_error' \| 'server_error' \| 'error' \| 'unknown'`         |
 | Uniform error shape       | `@error: { type, message, code, stack, cause? }` (cause chains serialised, depth-bounded) |
 | ISO-8601 UTC timestamps   | `@timestamp` (`2026-08-03T19:00:00.000Z`, automatic)                                      |
 

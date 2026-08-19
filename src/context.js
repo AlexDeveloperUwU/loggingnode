@@ -161,7 +161,13 @@ export function enrichEvent(fields = {}) {
  *
  * No‑op when called outside an active event or before {@link startEvent}.
  *
- * @param {'success'|'error'|'timeout'|'client_error'} outcome
+ * `outcome` is role-based, not HTTP-only: `client_error` means the *request* was
+ * bad (whichever side sent it — an inbound caller or this code's own outbound
+ * call to a dependency); `server_error` means the *handler* failed on a valid
+ * request (this service, or a downstream dependency this code called). `error`
+ * is the catch-all for failures with no request/response shape at all.
+ *
+ * @param {'success'|'client_error'|'server_error'|'error'|'unknown'} outcome
  * @param {object} [extraFields] - Final fields merged into the event.
  *
  * @example
@@ -189,9 +195,9 @@ export function endEvent(outcome, extraFields = {}) {
 
   if (!_logger) return;
 
-  if (outcome === "error" || outcome === "timeout") {
-    _logger.error(event, "request failed");
-  } else {
+  if (outcome === "success" || outcome === "client_error") {
     _logger.info(event, "request completed");
+  } else {
+    _logger.error(event, "request failed");
   }
 }

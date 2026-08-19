@@ -111,7 +111,7 @@ describe("expressMiddleware", () => {
     });
   });
 
-  it("reports error outcome for 500 status codes", async () => {
+  it("reports server_error outcome for 500 status codes", async () => {
     const dest = makeLogger();
     const mw = expressMiddleware(h.logger);
     const req = { method: "GET", url: "/fail", headers: {} };
@@ -122,7 +122,7 @@ describe("expressMiddleware", () => {
       mw(req, res, () => {});
       res.on("finish", () => {
         const e = dest.parsed()[0];
-        assert.equal(e["@outcome"], "error");
+        assert.equal(e["@outcome"], "server_error");
         assert.equal(e["@status_code"], 500);
         assert.equal(e.level, "error");
         resolve();
