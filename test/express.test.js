@@ -3,7 +3,12 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { Writable } from "node:stream";
 import { createLogger } from "../src/logger.js";
-import { enrichEvent, startEvent, endEvent } from "../src/context.js";
+import {
+  enrichEvent,
+  startEvent,
+  endEvent,
+  withOperation,
+} from "../src/context.js";
 import { expressMiddleware } from "../src/middleware/express.js";
 
 /**
@@ -195,8 +200,9 @@ describe("expressMiddleware", () => {
   });
 
   it("includes startEvent-based fields in the emitted event", async () => {
-    // Regression: a handler that calls startEvent() replaces the withContext
-    // store — the middleware must emit from the live ALS store, not a stale one.
+    // A handler that calls startEvent() while the middleware's event is
+    // already active merges fields into it (the startEvent safety net) —
+    // the middleware must still emit from the live ALS store either way.
     const dest = makeLogger();
     const mw = expressMiddleware(h.logger);
     const req = { method: "POST", url: "/checkout", headers: {} };
@@ -218,6 +224,51 @@ describe("expressMiddleware", () => {
       });
 
       res.emit("finish");
+    });
+  });
+
+  it("mints an @operation_id for every request", async () => {
+    const dest = makeLogger();
+    const mw = expressMiddleware(h.logger);
+    const req = { method: "GET", url: "/health", headers: {} };
+    const res = stubRes();
+
+    await new Promise((resolve) => {
+      mw(req, res, () => {});
+      res.on("finish", () => {
+        const e = dest.parsed()[0];
+        assert.ok(/^[\da-f-]{36}$/.test(e["@operation_id"]));
+        resolve();
+      });
+      res.emit("finish");
+    });
+  });
+
+  it("withOperation used inside a handler links @parent_operation_id to the request", async () => {
+    const dest = makeLogger();
+    const mw = expressMiddleware(h.logger);
+    const req = { method: "POST", url: "/checkout", headers: {} };
+    const res = stubRes();
+    res.statusCode = 201;
+
+    await new Promise((resolve) => {
+      // Route handlers finish their async work before the response's
+      // 'finish' event fires — emit it only after withOperation settles,
+      // not synchronously, or the child event wouldn't exist yet.
+      mw(req, res, () => {
+        withOperation("charge-card", {}, async () => {}).then(() =>
+          res.emit("finish"),
+        );
+      });
+      res.on("finish", () => {
+        const events = dest.parsed();
+        const parentEvt = events.find((e) => e["@status_code"] === 201);
+        const child = events.find((e) => e["@parent_operation_id"]);
+        assert.ok(parentEvt && child);
+        assert.equal(child["@parent_operation_id"], parentEvt["@operation_id"]);
+        assert.equal(child["@request_id"], parentEvt["@request_id"]);
+        resolve();
+      });
     });
   });
 

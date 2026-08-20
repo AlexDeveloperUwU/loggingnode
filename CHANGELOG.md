@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-20
+
+### Added
+
+- `withOperation(name, fields, fn)` — tracks a nested sub-action (a notification send, a payment call, an LLM call — anything whose own outcome is independently meaningful) as its own correlated wide event, safely under concurrency (`AsyncLocalStorage.run`, not `enterWith`). The child event carries `@operation_id` and `@parent_operation_id`, shares the parent's `@request_id`, and is emitted the moment it settles ("Operation completed"/"Operation failed"). The parent event gains a `@child_operations` array (`{ operation_id, name, duration_ms, outcome }` per entry, capped at 50 with `@child_operations_truncated` counting the rest) summarizing every child without needing to open its own line. All new fields — purely additive, no existing field changes shape.
+- `startEvent()` and `expressMiddleware` now both mint `@operation_id` — every event has one, root or child, HTTP or not, not just children created by `withOperation`.
+- Invalid `outcome` values passed to `endEvent`/`withOperation` (e.g. a typo like `"succes"`) now fall back to `"unknown"` with a one-time stderr warning, instead of being logged verbatim.
+
+### Fixed
+
+- Nested `startEvent()` calls no longer silently corrupt the active event via unscoped `als.enterWith` — they now merge into it and warn once instead of resetting it. (`withOperation` is the sanctioned way to track a nested sub-action; this is a safety net for the mistake, not a second supported pattern.)
+- `endEvent()` called from inside a `withOperation` callback no longer risks logging a stale or incorrect outcome — it's now a safe no-op with a one-time warning, so the operation's real outcome (whatever the callback returns or throws) can never be short-circuited.
+- `express` was listed as a runtime dependency despite never being imported by `src/` (`expressMiddleware` duck-types `req`/`res`); moved to `devDependencies`. Every install no longer pulls in Express unless you actually use it.
+
 ## [2.1.0] - 2026-08-19
 
 ### Added

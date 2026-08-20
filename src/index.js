@@ -16,6 +16,7 @@ export {
   enrichEvent,
   endEvent,
   withContext,
+  withOperation,
   getContext,
   initRequestContext,
   resetRequestContext,

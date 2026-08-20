@@ -21,8 +21,11 @@ npm test                 # node --test "test/*.test.js"  (built-in runner, zero 
 npm run test:watch       # node --test --watch "test/*.test.js"
 npm run lint             # eslint (flat config)
 npm run format           # prettier --write .
-npm run example:basic    # smoke-run examples/basic.js
-npm run example:express  # smoke-run examples/express.js (needs express installed)
+npm run example:basic              # smoke-run examples/basic.js
+npm run example:wide-event         # smoke-run examples/wide-event.js
+npm run example:express            # smoke-run examples/express.js (needs express installed)
+npm run example:shutdown           # smoke-run examples/shutdown.js (self-terminates after 5s)
+npm run example:nested-operations  # smoke-run examples/nested-operations.js
 ```
 
 There is no build step. `src/` is what ships.
@@ -35,14 +38,20 @@ There is no build step. `src/` is what ships.
 │   ├── index.js            # public barrel — re-exports the whole public API
 │   ├── config.js           # resolveConfig(options, env) — pure, returns frozen config
 │   ├── logger.js           # createLogger / initLogger / getLogger / flush / close
-│   ├── context.js          # AsyncLocalStorage + wide-event lifecycle (startEvent/enrichEvent/endEvent/withContext); deep-merge
+│   ├── context.js          # AsyncLocalStorage + wide-event lifecycle (startEvent/enrichEvent/endEvent/withContext/withOperation); deep-merge
 │   ├── streams.js          # pino.multistream assembly: pretty / JSON stdout / pino-seq
 │   ├── redaction.js        # DEFAULT_REDACT_PATHS + user-path merging + the compiled deep-redaction walker (createRedactor)
 │   ├── serializers.js      # err/error serializers → { type, message, code, stack, cause? }
 │   └── middleware/express.js  # expressMiddleware(logger) — one wide event per request
 ├── test/                   # one .test.js per src module
-└── examples/               # runnable usage demos (basic, wide-event, express, shutdown)
+├── examples/               # runnable usage demos (basic, wide-event, express, shutdown, nested-operations)
+├── docs/
+│   ├── SPEC.md             # the why — design rationale, argued from first principles
+│   └── USAGE.md            # the how — full developer reference + migration playbook
+└── README.md               # overview only: features, quick start, links into docs/
 ```
+
+`README.md` stays short on purpose — it's the front door, not the reference. Any new "why" content belongs in `docs/SPEC.md`; any new "how" content (an option, an export, a walkthrough) belongs in `docs/USAGE.md`. Don't let README grow back into a full reference — link to the doc that owns the content instead.
 
 ## Coding standards
 
@@ -64,7 +73,7 @@ There is no build step. `src/` is what ships.
 - One test file per source module: `test/config.test.js` tests `src/config.js`, etc.
 - **The test seam is `createLogger({ destination })`** — inject a synchronous in-memory `Writable` that collects parsed JSON lines. Every behavioral assertion goes through it.
 - Tests **never** touch stdout, the network, or a live Seq server. Express middleware is tested with stub `req`/`res` objects (`EventEmitter`-based `res`).
-- The critical test: two interleaved `withContext` async tasks must never cross-contaminate their events (AsyncLocalStorage isolation).
+- The critical test: two interleaved `withContext` async tasks must never cross-contaminate their events (AsyncLocalStorage isolation). Same requirement for `withOperation`: many concurrent siblings under one parent (`Promise.all`) must all register in `@child_operations` with zero lost pushes — this is what actually proves the synchronous-push invariant holds, not just code inspection.
 
 ## Architectural guardrails — NEVER list
 
@@ -92,6 +101,10 @@ There is no build step. `src/` is what ships.
 - The 75/25 proportional mask is `defaultCensor(value)`, invoked by the redaction walker (and by pino-compatible `buildRedact` output) with `(value, path)`. A user-supplied `redactCensor` string or function replaces it wholesale. `createRedactor({ paths, censor })` compiles the walker once per `createLogger` — never per event.
 - Auto-detection reads, in order: explicit option, documented env var, then filesystem/runtime (`package.json` walked up from `process.cwd()`, `os.hostname()`). Keep `resolveConfig` pure — the impure `detectContext()` (package.json + hostname) is called once in `createLogger` and its result passed in.
 - **`expressMiddleware` shares the AsyncLocalStorage from `context.js`** (via `withContext`). Handler `enrichEvent()` calls mutate the same store the middleware emits on `finish` — if you ever give the middleware its own `AsyncLocalStorage`, Express enrichment silently breaks.
+- **`startEvent()` uses `als.enterWith()` — no scope, no auto-restore.** That's correct for the one top-level call per unit of work, but never reuse `enterWith` for anything nested; a nested `enterWith` swap corrupts the parent's context under concurrent siblings, silently. `withOperation()` exists specifically because nesting needs `als.run()` instead (proper scope, automatic restore) — see next point. `startEvent()` itself has a safety net for accidental nested calls: if `store._startHr && !store._ended`, it merges `fields` into the existing store (`deepMerge`, like `enrichEvent`) and warns once, instead of calling `enterWith`.
+- **`withOperation(name, fields, fn)` tracks a nested sub-action as its own correlated event**, safely under concurrency, via `als.run(childStore, fn)`. Every event carries `@operation_id` — minted by `startEvent`, by `expressMiddleware` (which never calls `startEvent`, it seeds its own `withContext` store directly, so it mints its own), or by `withOperation` for a child — keep all three in sync if this ever changes; a child also carries `@parent_operation_id` pointing at its parent's `@operation_id`, and inherits the parent's `@request_id`. The child store is marked `_ownedByOperation: true` — `endEvent()` checks that flag and no-ops-with-warning instead of finalizing it early, so a stray `endEvent()` call inside a `withOperation` callback can never log a stale/wrong outcome; the real outcome is always whatever the callback returns or throws. The parent's `@child_operations` array (`{ operation_id, name, duration_ms, outcome }` per entry) is pushed to **synchronously, before any `await`** inside `withOperation` — that invariant is what makes it safe when several `withOperation` calls run concurrently under the same parent (`Promise.all`); don't move that push after `als.run()`/the first `await`. Capped at `MAX_CHILD_OPERATIONS` (50); past that, children still run and still emit their own event, just stop being listed, and `@child_operations_truncated` counts the rest.
+- **`emitOutcome(logger, event, outcome)`** (shared by `endEvent`, `withOperation`, and `expressMiddleware`) derives "Request"/"Operation" in the emitted message from whether `event["@parent_operation_id"]` is present — never pass that distinction as a separate parameter, it'd be one more place to get it wrong.
+- **`DEFAULT_OUTCOME_LEVELS`'s keys are the only source of truth for valid `outcome` values** — there is no separate enum-like export, and there shouldn't be one; validate with `Object.hasOwn(DEFAULT_OUTCOME_LEVELS, outcome)`. An invalid `outcome` (typo) normalizes to `"unknown"` with a one-time stderr warning rather than being logged verbatim — this applies uniformly to `endEvent` and `withOperation` via the shared private `buildOutcomeEvent` helper.
 
 ## Release & publish
 

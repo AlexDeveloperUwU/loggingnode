@@ -37,6 +37,7 @@ export function expressMiddleware(logger) {
 
     withContext(
       {
+        "@operation_id": randomUUID(),
         "@request_id": requestId,
         "@method": req.method,
         "@route": req.route?.path || req.path || req.url,
