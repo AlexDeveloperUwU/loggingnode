@@ -1,4 +1,4 @@
 include:
-  - component: $CI_SERVER_FQDN/personal/utils/ci-cd/npm@v1.2.1
+  - component: $CI_SERVER_FQDN/personal/utils/ci-cd/npm@v1.2.2
     inputs:
       github_mirror_repo: "AlexDeveloperUwU/loggingnode"
