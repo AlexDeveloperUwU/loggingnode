@@ -27,4 +27,4 @@ jobs:
       - name: Remove placeholder authToken so npm uses OIDC trusted publishing
         run: sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
 
-      - run: npm publish --access public
+      - run: npm publish --access public --loglevel silly
