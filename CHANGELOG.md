@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.11] - 2026-08-23
+
+### Changed
+
+- Verification release after recreating the npm Trusted Publisher config with the correct exact-case GitHub org (`AlexDeveloperUwU`) — the prior OIDC token exchange failed with "package not found", likely due to a case mismatch. `publish.yml` debug flags removed.
+
 ## [2.2.10] - 2026-08-23
 
 ### Changed
