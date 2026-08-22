@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.5] - 2026-08-23
+
+### Fixed
+
+- `publish.yml` clears `NODE_AUTH_TOKEN` on the publish step — `actions/setup-node` auto-populates it with a placeholder even without an `NPM_TOKEN` secret, which made npm think a traditional token was configured and skip the OIDC trusted-publishing path, still hitting the registry unauthenticated.
+
 ## [2.2.4] - 2026-08-23
 
 ### Fixed
