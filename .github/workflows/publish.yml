@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - run: npm install -g npm@11
       - run: npm test
+      - run: npm --version
+      - run: env | grep -i "ACTIONS_ID_TOKEN\|ACTIONS_RUNTIME" || echo "no ID token env vars present"
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ''
