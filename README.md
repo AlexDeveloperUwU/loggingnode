@@ -4,7 +4,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 
-Opinionated structured logging for Node.js services, built on [pino](https://getpino.io/). One wide, context-rich event per request instead of a dozen scattered lines, [Seq](https://datalust.co/seq) aggregation out of the box, sane redaction defaults, and zero build step — pure ESM JavaScript.
+Opinionated structured logging for Node.js services, built on [pino](https://getpino.io/). One wide, context-rich event per request instead of a dozen scattered lines, zero-config [Seq](https://datalust.co/seq) aggregation when you want it (one env var, no separate integration), sane redaction defaults, and zero build step — pure ESM JavaScript.
 
 The philosophy: **log what happened to the request, not what your code is doing.** Inspired by [loggingsucks.com](https://loggingsucks.com/) and Stripe's canonical log lines.
 
@@ -27,7 +27,7 @@ The philosophy: **log what happened to the request, not what your code is doing.
 ## Requirements
 
 - Node.js **>= 18** (>= 20 recommended)
-- Optional: a [Seq](https://datalust.co/seq) server for centralized aggregation
+- No Seq server required — the library works standalone with pretty/JSON console output. A [Seq](https://datalust.co/seq) server is optional, for teams who want centralized aggregation across services; set `SEQ_SERVER_URL` to turn it on, nothing else changes at your call sites.
 
 ## Installation
 
