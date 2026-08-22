@@ -1,6 +1,6 @@
 {
   "name": "@alexdevuwu/logging",
-  "version": "2.2.12",
+  "version": "2.2.13",
   "description": "Opinionated structured logging for Node.js — wide events, Seq aggregation, pino under the hood.",
   "repository": {
     "type": "git",

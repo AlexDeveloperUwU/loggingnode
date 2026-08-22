@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.13] - 2026-08-23
+
+### Changed
+
+- `.gitlab-ci.yml` pins the shared npm CI/CD component to `@v1.2.0` (was floating on `@main`) and opts into its new `github_mirror_repo` input — GitLab's release pipeline now pushes the tag it creates straight to GitHub itself, firing the npm Trusted Publishing Action automatically. No more manual `git fetch --tags && git push github <tag>` step per release.
+
 ## [2.2.12] - 2026-08-23
 
 ### Fixed
