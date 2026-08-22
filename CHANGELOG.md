@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.7] - 2026-08-23
+
+### Added
+
+- `repository` field in `package.json` pointing at the GitHub repo — required for npm Trusted Publishing to match the publishing workflow to the package; its absence was the actual cause of every prior OIDC failure (npm never attempted the token exchange without it, silently falling through to `ENEEDAUTH`).
+
 ## [2.2.6] - 2026-08-23
 
 ### Changed
