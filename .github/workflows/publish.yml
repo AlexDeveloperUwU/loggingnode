@@ -24,8 +24,7 @@ jobs:
       - run: npm ci
       - run: npm install -g npm@11
       - run: npm test
-      - run: npm --version
-      - run: cat "$NPM_CONFIG_USERCONFIG"
-      - run: npm publish --access public --verbose
-        env:
-          NODE_AUTH_TOKEN: ''
+      - name: Remove placeholder authToken so npm uses OIDC trusted publishing
+        run: sed -i '/_authToken/d' "$NPM_CONFIG_USERCONFIG"
+
+      - run: npm publish --access public

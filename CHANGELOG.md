@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.9] - 2026-08-23
+
+### Fixed
+
+- Root cause found and fixed: `actions/setup-node` always writes a `//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}` line into the generated `.npmrc`, and npm treats the mere presence of that key — even resolving to an empty value — as "traditional auth configured," so it never falls through to OIDC trusted publishing. `publish.yml` now strips that line before `npm publish`.
+
 ## [2.2.8] - 2026-08-23
 
 ### Changed
