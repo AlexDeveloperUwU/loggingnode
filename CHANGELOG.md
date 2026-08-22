@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.4] - 2026-08-23
+
+### Fixed
+
+- `publish.yml` pins Node to `'22'` (latest 22.x) instead of `'22.14'` and npm to `npm@11` instead of `@latest` — `npm@latest` (12.x) requires Node ≥22.22.2 and rejected the pinned runtime with `EBADENGINE`.
+
 ## [2.2.3] - 2026-08-23
 
 ### Fixed
