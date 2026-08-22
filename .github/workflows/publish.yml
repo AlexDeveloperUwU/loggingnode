@@ -22,5 +22,6 @@ jobs:
           package-manager-cache: false
 
       - run: npm ci
+      - run: npm install -g npm@latest
       - run: npm test
       - run: npm publish --access public

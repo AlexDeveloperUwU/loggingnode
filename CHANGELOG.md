@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] - 2026-08-23
+
+### Fixed
+
+- `publish.yml` upgrades npm to latest before publishing — the `ubuntu-latest` runner's bundled npm (10.9.2) is older than the 11.5.1 minimum trusted publishing requires, which silently fell back to unauthenticated (404) publish attempts.
+
 ## [2.2.2] - 2026-08-23
 
 ### Changed
